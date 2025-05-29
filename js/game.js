@@ -29,6 +29,21 @@ class Game {
         
         // 初始化事件监听
         this.initEventListeners();
+        
+        // 初始化触摸事件监听
+        this.initTouchListeners();
+
+        // 初始化动态背景
+        this.initDynamicBackground();
+
+        // 在构造函数中加载背景图像
+        this.backgroundImage = new Image();
+        this.backgroundImage.src = 'F:/123.png';
+
+        // 确保背景图像加载完成后再渲染
+        this.backgroundImage.onload = () => {
+            this.renderDynamicBackground();
+        };
     }
     
     // 加载游戏资源
@@ -87,6 +102,39 @@ class Game {
         // 键盘事件
         window.addEventListener('keydown', (e) => this.handleKeyDown(e));
         window.addEventListener('keyup', (e) => this.handleKeyUp(e));
+    }
+    
+    // 初始化触摸事件监听
+    initTouchListeners() {
+        if (!CONFIG.TOUCH_ENABLED) return;
+
+        const joystick = document.getElementById('joystick');
+        const fireButton = document.getElementById('fireButton');
+
+        if (joystick) {
+            this.joystickBase = joystick; // Store reference to joystick element
+            joystick.addEventListener('touchstart', (e) => this.handleTouchStart(e));
+            joystick.addEventListener('touchmove', (e) => this.handleTouchMove(e));
+            joystick.addEventListener('touchend', (e) => this.handleTouchEnd(e));
+        }
+
+        if (fireButton) {
+            // Prevent default touch behavior to avoid accidental scrolling
+            fireButton.addEventListener('touchstart', (e) => { 
+                e.preventDefault();
+                if (this.player) this.player.shoot();
+            });
+            // Ensure the button is released
+            fireButton.addEventListener('touchend', (e) => { 
+                e.preventDefault();
+                // Optional: Add logic if needed on touch end for fire button
+            });
+        }
+
+        // Ensure game canvas doesn't interfere with touch controls
+        this.canvas.addEventListener('touchstart', (e) => e.preventDefault());
+        this.canvas.addEventListener('touchmove', (e) => e.preventDefault());
+        this.canvas.addEventListener('touchend', (e) => e.preventDefault());
     }
     
     // 处理键盘按下事件
@@ -242,10 +290,9 @@ class Game {
         if (levelElement) levelElement.textContent = this.level;
     }
     
-    // 游戏主循环
+    // 优化游戏主循环
     gameLoop(currentTime) {
-        if (!this.isRunning) return;
-        if (this.isPaused) return;
+        if (!this.isRunning || this.isPaused) return;
         
         // 计算帧间隔时间
         const deltaTime = currentTime - this.lastTime;
@@ -257,13 +304,12 @@ class Game {
         // 渲染游戏
         this.render();
         
-        // 继续下一帧
+        // 使用 requestAnimationFrame 进行下一帧
         requestAnimationFrame((time) => this.gameLoop(time));
     }
     
-    // 更新游戏状态
+    // 优化更新游戏状态
     update(deltaTime) {
-        // 限制deltaTime，防止卡顿时物理异常
         const dt = Math.min(deltaTime, 32);
         
         // 更新玩家坦克
@@ -294,26 +340,23 @@ class Game {
             // 检查子弹碰撞
             const collision = bullet.handleCollision([...this.enemies, this.player], this.map);
             if (collision) {
-                // 创建爆炸效果
                 this.explosions.createExplosion(collision.x, collision.y);
+                this.playSound(SOUND_TYPE.EXPLOSION);
+                this.screenShake(CONFIG.SCREEN_SHAKE_INTENSITY, CONFIG.SCREEN_SHAKE_DURATION);
                 
-                // 增加分数
                 if (collision.score > 0) {
                     this.score += collision.score;
                     this.updateUI();
                 }
                 
-                // 检查玩家是否被击中
                 if (!this.player.visible) {
                     this.lives--;
                     this.updateUI();
                     
                     if (this.lives <= 0) {
-                        // 游戏结束
                         this.gameOver();
                         return;
                     } else {
-                        // 重生玩家
                         setTimeout(() => {
                             const basePosition = this.map.getBasePosition();
                             this.player = new PlayerTank(
@@ -324,27 +367,18 @@ class Game {
                     }
                 }
                 
-                // 检查基地是否被击中
                 if (collision.isBase) {
-                    // 游戏结束
                     this.gameOver();
                     return;
                 }
             }
         }
         
-        // 移除无效的子弹
         this.bullets = this.bullets.filter(bullet => bullet.active);
-        
-        // 移除无效的敌人
         this.enemies = this.enemies.filter(enemy => enemy.visible);
-        
-        // 更新爆炸效果
         this.explosions.update(dt);
         
-        // 检查关卡是否完成
         if (this.enemies.length === 0 && this.enemySpawner.enemiesSpawned >= this.enemySpawner.maxEnemies) {
-            // 进入下一关
             this.level++;
             this.updateUI();
             this.initGame();
@@ -379,5 +413,120 @@ class Game {
         
         // 渲染爆炸效果
         this.explosions.render(this.ctx);
+    }
+
+    // 处理触摸开始事件
+    handleTouchStart(e) {
+        e.preventDefault();
+        if (!this.isRunning || !this.player) return;
+
+        const touch = e.touches[0];
+        this.joystickStartX = touch.clientX;
+        this.joystickStartY = touch.clientY;
+
+        // Optional: Visual feedback for joystick activation
+        // this.joystickBase.style.backgroundColor = 'rgba(255, 255, 255, 0.4)';
+    }
+
+    // 处理触摸移动事件
+    handleTouchMove(e) {
+        e.preventDefault();
+        if (!this.isRunning || !this.player || this.joystickStartX === undefined) return;
+
+        const touch = e.touches[0];
+        const deltaX = touch.clientX - this.joystickStartX;
+        const deltaY = touch.clientY - this.joystickStartY;
+
+        // Calculate direction based on the largest movement axis
+        if (Math.abs(deltaX) > Math.abs(deltaY)) {
+            // Horizontal movement is dominant
+            if (deltaX > 0) {
+                this.player.moveRight();
+            } else {
+                this.player.moveLeft();
+            }
+        } else {
+            // Vertical movement is dominant or equal
+            if (deltaY > 0) {
+                this.player.moveDown();
+            } else {
+                this.player.moveUp();
+            }
+        }
+
+        // Optional: Move joystick thumb visually (requires an element for thumb)
+        // const thumb = document.getElementById('joystick-thumb');
+        // if (thumb) {
+        //     const maxDist = CONFIG.VIRTUAL_JOYSTICK_SIZE / 2;
+        //     const angle = Math.atan2(deltaY, deltaX);
+        //     const distance = Math.min(Math.sqrt(deltaX * deltaX + deltaY * deltaY), maxDist);
+        //     thumb.style.transform = `translate(${Math.cos(angle) * distance}px, ${Math.sin(angle) * distance}px)`;
+        // }
+    }
+
+    // 处理触摸结束事件
+    handleTouchEnd(e) {
+        e.preventDefault();
+        if (!this.isRunning || !this.player) return;
+
+        this.player.stopMoving();
+        this.joystickStartX = undefined;
+        this.joystickStartY = undefined;
+
+        // Optional: Reset joystick visual feedback
+        // this.joystickBase.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+        // const thumb = document.getElementById('joystick-thumb');
+        // if (thumb) {
+        //     thumb.style.transform = 'translate(0, 0)';
+        // }
+    }
+
+    // 增加音效和视觉反馈
+    playSound(type) {
+        if (!CONFIG.SOUND_ENABLED) return;
+        const audio = new Audio(`sounds/${type}.mp3`);
+        audio.play();
+    }
+
+    // 增加屏幕震动效果
+    screenShake(intensity, duration) {
+        const originalStyle = this.canvas.style.transform;
+        let shakeTime = 0;
+        const shake = () => {
+            if (shakeTime < duration) {
+                const x = (Math.random() - 0.5) * intensity;
+                const y = (Math.random() - 0.5) * intensity;
+                this.canvas.style.transform = `translate(${x}px, ${y}px)`;
+                shakeTime += 16;
+                requestAnimationFrame(shake);
+            } else {
+                this.canvas.style.transform = originalStyle;
+            }
+        };
+        shake();
+    }
+
+    // 初始化动态背景
+    initDynamicBackground() {
+        this.backgroundOffset = 0;
+        this.backgroundSpeed = 0.5; // 背景移动速度
+    }
+
+    // 更新动态背景
+    updateDynamicBackground(dt) {
+        this.backgroundOffset += this.backgroundSpeed * dt;
+        if (this.backgroundOffset > this.canvas.height) {
+            this.backgroundOffset = 0;
+        }
+    }
+
+    // 渲染动态背景
+    renderDynamicBackground() {
+        const pattern = this.ctx.createPattern(this.backgroundImage, 'repeat');
+        this.ctx.fillStyle = pattern;
+        this.ctx.save();
+        this.ctx.translate(0, this.backgroundOffset);
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.restore();
     }
 } 

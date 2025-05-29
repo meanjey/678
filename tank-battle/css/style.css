@@ -14,6 +14,9 @@ body {
     align-items: center;
     min-height: 100vh;
     padding: 20px;
+    background-image: url('F:/123.png');
+    background-size: cover;
+    background-position: center;
 }
 
 .game-container {
@@ -131,4 +134,25 @@ body {
         margin-bottom: 10px;
         text-align: center;
     }
+}
+
+/* 虚拟摇杆样式 */
+.virtual-joystick {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    width: 100px;
+    height: 100px;
+    background-color: rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    border: 2px solid #fff;
+    z-index: 200;
+}
+
+/* 射击按钮样式 */
+#fireButton {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 200;
 } 
